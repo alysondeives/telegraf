@@ -41,6 +41,7 @@ const (
 type PowerStat struct {
 	CPUMetrics     []string        `toml:"cpu_metrics"`
 	PackageMetrics []string        `toml:"package_metrics"`
+	ReadTimeout    int64           `toml:"msr_read_timeout"`
 	Log            telegraf.Logger `toml:"-"`
 
 	fs   fileService
@@ -96,7 +97,7 @@ func (p *PowerStat) initMSR() {
 	// Initialize MSR service only when there is at least one metric enabled
 	if p.cpuFrequency || p.cpuBusyFrequency || p.cpuTemperature || p.cpuC0StateResidency || p.cpuC1StateResidency ||
 		p.cpuC6StateResidency || p.cpuBusyCycles || p.packageTurboLimit || p.packageUncoreFrequency || p.packageCPUBaseFrequency {
-		p.msr = newMsrServiceWithFs(p.Log, p.fs)
+		p.msr = newMsrServiceWithFs(p.Log, p.fs, p.ReadTimeout)
 	}
 }
 
@@ -903,6 +904,7 @@ func newPowerStat(fs fileService) *PowerStat {
 		skipFirstIteration: true,
 		fs:                 fs,
 		logOnce:            make(map[string]error),
+		ReadTimeout:        100,
 	}
 
 	return p

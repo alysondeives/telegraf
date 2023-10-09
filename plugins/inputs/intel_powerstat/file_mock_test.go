@@ -6,6 +6,7 @@ package intel_powerstat
 
 import (
 	io "io"
+	"time"
 
 	mock "github.com/stretchr/testify/mock"
 )
@@ -85,19 +86,19 @@ func (_m *mockFileService) readFile(path string) ([]byte, error) {
 }
 
 // readFileAtOffsetToUint64 provides a mock function with given fields: reader, offset
-func (_m *mockFileService) readFileAtOffsetToUint64(reader io.ReaderAt, offset int64) (uint64, error) {
-	ret := _m.Called(reader, offset)
+func (_m *mockFileService) readFileAtOffsetToUint64(reader io.ReaderAt, offset int64, timeout time.Duration) (uint64, error) {
+	ret := _m.Called(reader, offset, timeout)
 
 	var r0 uint64
-	if rf, ok := ret.Get(0).(func(io.ReaderAt, int64) uint64); ok {
-		r0 = rf(reader, offset)
+	if rf, ok := ret.Get(0).(func(io.ReaderAt, int64, time.Duration) uint64); ok {
+		r0 = rf(reader, offset, timeout)
 	} else {
 		r0 = ret.Get(0).(uint64)
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(io.ReaderAt, int64) error); ok {
-		r1 = rf(reader, offset)
+	if rf, ok := ret.Get(1).(func(io.ReaderAt, int64, time.Duration) error); ok {
+		r1 = rf(reader, offset, timeout)
 	} else {
 		r1 = ret.Error(1)
 	}

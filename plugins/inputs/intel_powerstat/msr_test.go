@@ -182,7 +182,8 @@ func getMsrServiceWithMockedFs() (*msrServiceImpl, *mockFileService) {
 	fsMock := &mockFileService{}
 	fsMock.On("getStringsMatchingPatternOnPath", mock.Anything).
 		Return(cores, nil).Once()
-	msr := newMsrServiceWithFs(logger, fsMock)
+	timeout := int64(100)
+	msr := newMsrServiceWithFs(logger, fsMock, timeout)
 
 	return msr, fsMock
 }

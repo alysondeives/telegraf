@@ -48,6 +48,10 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ##   "cpu_busy_frequency"
   ## ATTENTION: cpu_busy_cycles is DEPRECATED - use cpu_c0_state_residency
   # cpu_metrics = []
+  
+  # The user can set the timeout duration in milliseconds for MSR reading
+  # The Default value is 100 ms.
+  # msr_read_timeout_ms = 100
 ```
 
 ## Example: Configuration with no per-CPU telemetry
