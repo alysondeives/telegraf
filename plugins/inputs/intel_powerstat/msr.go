@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -36,7 +37,6 @@ const (
 	platformInfo                       = 0xCE
 	fsbFreq                            = 0xCD
 )
-
 const (
 	msrTurboRatioLimitString     = "MSR_TURBO_RATIO_LIMIT"
 	msrTurboRatioLimit1String    = "MSR_TURBO_RATIO_LIMIT1"
@@ -46,6 +46,9 @@ const (
 	msrPlatformInfoString        = "MSR_PLATFORM_INFO"
 	msrFSBFreqString             = "MSR_FSB_FREQ"
 )
+
+// Maximum size of core IDs or socket IDs (8192). Based on maximum value of CPUs that linux kernel supports.
+const maxIDsSize = 1 << 13
 
 // msrService is responsible for interactions with MSR.
 type msrService interface {
@@ -59,6 +62,7 @@ type msrService interface {
 
 type msrServiceImpl struct {
 	cpuCoresData map[string]*msrData
+	cpuCores     []int
 	msrOffsets   []int64
 	fs           fileService
 	log          telegraf.Logger
@@ -288,6 +292,12 @@ func (m *msrServiceImpl) setCPUCores() error {
 
 	for _, cpuPath := range cpuPaths {
 		core := strings.TrimPrefix(filepath.Base(cpuPath), cpuPrefix)
+		if m.cpuCores != nil {
+			coreInt, _ := strconv.Atoi(core)
+			if !Contains(m.cpuCores, coreInt) {
+				continue
+			}
+		}
 		m.cpuCoresData[core] = &msrData{
 			mperf:                 0,
 			aperf:                 0,
@@ -309,10 +319,12 @@ func (m *msrServiceImpl) setCPUCores() error {
 	return nil
 }
 
-func newMsrServiceWithFs(logger telegraf.Logger, fs fileService) *msrServiceImpl {
+func newMsrServiceWithFs(logger telegraf.Logger, fs fileService, cores []string) *msrServiceImpl {
+	parsedCores := parseCores(logger, cores)
 	msrService := &msrServiceImpl{
-		fs:  fs,
-		log: logger,
+		fs:       fs,
+		log:      logger,
+		cpuCores: parsedCores,
 	}
 	err := msrService.setCPUCores()
 	if err != nil {
@@ -324,4 +336,95 @@ func newMsrServiceWithFs(logger telegraf.Logger, fs fileService) *msrServiceImpl
 		maximumFrequencyClockCountLocation, actualFrequencyClockCountLocation, timestampCounterLocation,
 		throttleTemperatureLocation, temperatureLocation}
 	return msrService
+}
+
+func parseCores(logger telegraf.Logger, cores []string) []int {
+	if cores == nil {
+		logger.Debug("all possible cores will be configured")
+		return nil
+	}
+	if len(cores) == 0 {
+		logger.Warn("an empty list of cores was provided. All possible cores will be configured")
+		return nil
+	}
+	result, err := parseIntRanges(logger, cores)
+	if err != nil {
+		logger.Warnf("Error while parsing list of cores: %w. All possible cores will be configured", err)
+		return nil
+	}
+	return result
+}
+
+func parseIntRanges(logger telegraf.Logger, ranges []string) ([]int, error) {
+	var ids []int
+	var duplicatedIDs []int
+	var err error
+	ids, err = parseIDs(ranges)
+	if err != nil {
+		return nil, err
+	}
+	ids, duplicatedIDs = removeDuplicateValues(ids)
+	for _, duplication := range duplicatedIDs {
+		logger.Warn("duplicated id number `%d` will be removed", duplication)
+	}
+	return ids, nil
+}
+
+func parseIDs(allIDsStrings []string) ([]int, error) {
+	var result []int
+	for _, idsString := range allIDsStrings {
+		ids := strings.Split(idsString, ",")
+
+		for _, id := range ids {
+			id := strings.TrimSpace(id)
+			// a-b support
+			var start, end uint
+			n, err := fmt.Sscanf(id, "%d-%d", &start, &end)
+			if err == nil && n == 2 {
+				if start >= end {
+					return nil, fmt.Errorf("`%d` is equal or greater than `%d`", start, end)
+				}
+				for ; start <= end; start++ {
+					if len(result)+1 > maxIDsSize {
+						return nil, fmt.Errorf("requested number of IDs exceeds max size `%d`", maxIDsSize)
+					}
+					result = append(result, int(start))
+				}
+				continue
+			}
+			// Single value
+			num, err := strconv.Atoi(id)
+			if err != nil {
+				return nil, fmt.Errorf("wrong format for id number %q: %w", id, err)
+			}
+			if len(result)+1 > maxIDsSize {
+				return nil, fmt.Errorf("requested number of IDs exceeds max size `%d`", maxIDsSize)
+			}
+			result = append(result, num)
+		}
+	}
+	return result, nil
+}
+
+func removeDuplicateValues(intSlice []int) (result []int, duplicates []int) {
+	keys := make(map[int]bool)
+
+	for _, entry := range intSlice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			result = append(result, entry)
+		} else {
+			duplicates = append(duplicates, entry)
+		}
+	}
+	return result, duplicates
+}
+
+func contains[T comparable](s []T, e T) bool {
+	for _, v := range s {
+		if v == e {
+			return true
+		}
+	}
+	return false
 }
